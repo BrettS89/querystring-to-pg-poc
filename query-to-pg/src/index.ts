@@ -1,8 +1,11 @@
+import { ValidateFunction } from 'ajv';
 import { BaseQueryObject, ComparisonObjectDefinition } from './types';
+import { parseQueryString } from './qs-parser';
 
 export type GenerateQueryProps = {
   sqlString: string;
-  filter: BaseQueryObject & { [field: string]: number | string | boolean | null | ComparisonObjectDefinition };
+  query: BaseQueryObject & { [field: string]: number | string | boolean | null | ComparisonObjectDefinition } | string;
+  schema?: ValidateFunction;
   prefixMap?: Record<string, string>;
 }
 
@@ -26,10 +29,17 @@ const getPrefix = (field: string, prefixMap: Record<string, string>): string =>
     : '';
 
 export const generateSqlAndParams = (props: GenerateQueryProps): { sql: string; values: any[] } => {
-  console.log(JSON.stringify(props.filter))
   const prefixMap = props.prefixMap ?? {};
 
-  const queryObject = props.filter;
+  const queryObject = typeof props.query === 'string'
+    ? parseQueryString(props.query)
+    : props.query;
+
+  if (props.schema) {
+    if (!props.schema(queryObject)) {
+      throw props.schema.errors;
+    }
+  }
   
   let paramIndex = 1;
 
@@ -40,6 +50,7 @@ export const generateSqlAndParams = (props: GenerateQueryProps): { sql: string; 
   // Build WHERE clause
   for (const [field, value] of Object.entries(queryObject)) {
     if (nonFilters[field]) continue;
+
     if (!/^[a-zA-Z0-9_]+$/.test(field) && field !== '$or') {
       throw new Error(`Invalid field name: ${field}`);
     }
@@ -61,6 +72,7 @@ export const generateSqlAndParams = (props: GenerateQueryProps): { sql: string; 
 
         if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
           or.push(`${getPrefix(k, prefixMap)}${k} = $${paramIndex++}`);
+
           values.push(v);
         } else if (typeof v === 'object' && v !== null) {
           for (const [op, val] of Object.entries(v)) {
@@ -83,6 +95,7 @@ export const generateSqlAndParams = (props: GenerateQueryProps): { sql: string; 
     // HANDLE AND
     } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
       conditions.push(`${getPrefix(field, prefixMap)}${field} = $${paramIndex++}`);
+      
       values.push(value);
     } else if (typeof value === 'object' && value !== null) {
       for (const [op, val] of Object.entries(value)) {
@@ -94,6 +107,7 @@ export const generateSqlAndParams = (props: GenerateQueryProps): { sql: string; 
           conditions.push(`${getPrefix(field, prefixMap)}${field} IS NOT NULL`)
         } else {
           conditions.push(`${getPrefix(field, prefixMap)}${field} ${operatorMap[op]} $${paramIndex++}`);
+
           values.push(val as string | number | boolean);
         }
 

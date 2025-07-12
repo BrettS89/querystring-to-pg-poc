@@ -1,4 +1,4 @@
-import { AnySchema } from 'ajv';
+import Ajv, { AnySchema, ValidateFunction } from 'ajv';
 import { Fields } from './types';
 
 export const createComparisonObject = (primitiveType: string | string[]) => {
@@ -29,17 +29,17 @@ export const baseQuerySchema = {
     type: 'object',
     additionalProperties: { type: 'integer', enum: [1, -1] },
     nullable: true
-  }
+  },
 };
 
-export const createQuerySchema = (fields: Fields): AnySchema => {
+export const createQuerySchema = (fields: Fields): ValidateFunction => {
   const resolvedSchema: Record<string, any> = {};
 
   for (let field in fields) {
     resolvedSchema[field] = createFieldSchema(fields[field].type);
   }
 
-  return {
+  const jsonSchema = {
     type: 'object',
     additionalProperties: false,
     properties: {
@@ -63,4 +63,10 @@ export const createQuerySchema = (fields: Fields): AnySchema => {
       }
     },
   };
+
+  const ajv = new Ajv({ allErrors: true });
+
+  const compiled = ajv.compile(jsonSchema);
+
+  return compiled;
 };
